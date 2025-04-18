@@ -14,42 +14,7 @@ class CypherPredefinedArguments(TaskArguments):
                 description="Run a predefined cypher query from Bloodhound CE",
                 type=ParameterType.ChooseOne,
                 default_value="All Domain Admins",
-                choices=[
-                    "All Domain Admins",
-                    "Map domain trusts",
-                    "Computers with unsupported operating systems",
-                    "Locations of high value/Tier Zero objects",
-                    "Principals with DCSync privileges",
-                    "Users with foreign domain group membership",
-                    "Groups with foreign domain group membership",
-                    "Computers where Domain Users are local administrators",
-                    "Computers where Domain Users can read LAPS passwords",
-                    "Paths from Domain Users to high value/Tier Zero targets",
-                    "Workstations where Domain Users can RDP",
-                    "Servers where Domain Users can RDP",
-                    "Dangerous privileges for Domain Users groups",
-                    "Domain Admins logons to non-Domain Controllers",
-                    "Kerberoastable members of high value/Tier Zero groups",
-                    "All Kerberoastable users",
-                    "Kerberoastable users with most privileges",
-                    "AS-REP Roastable users (DontReqPreAuth)",
-                    "Shortest paths to systems trusted for unconstrained delegation",
-                    "Shortest paths from Kerberoastable users",
-                    "Shortest paths to Domain Admins from Kerberoastable users",
-                    "Shortest paths to high value/Tier Zero targets",
-                    "Shortest paths from Domain Users to high value/Tier Zero targets",
-                    "Shortest paths to Domain Admins",
-                    "PKI hierarchy",
-                    "Public Key Services container",
-                    "Enrollment rights on published certificate templates",
-                    "Enrollment rights on published ESC1 certificate templates",
-                    "Enrollment rights on published enrollment agent certificate templates",
-                    "Enrollment rights on published certificate templates with no security extension",
-                    "Enrollment rights on certificate templates published to Enterprise CA with User Specified SAN enabled",
-                    "CA administrators and CA managers",
-                    "Domain controllers with weak certificate binding enabled",
-                    "Domain controllers with UPN certificate mapping enabled"
-                ],
+                choices=list(predefined_queries.keys()),
                 parameter_group_info=[ParameterGroupInfo(
                     required=True
                 )]
@@ -65,180 +30,387 @@ class CypherPredefinedArguments(TaskArguments):
 
 predefined_queries = {
     "All Domain Admins": """
-MATCH p=(n:Group)<-[:MemberOf*1..]-(m)
-WHERE n.objectid ENDS WITH "-512"
+MATCH p = (t:Group)<-[:MemberOf*1..]-(a)
+WHERE (a:User or a:Computer) and t.objectid ENDS WITH '-512'
 RETURN p
+LIMIT 1000
     """,
     "Map domain trusts": """
-MATCH p=(n:Domain)-[]->(m:Domain)
+MATCH p = (:Domain)-[:TrustedBy]->(:Domain)
 RETURN p
+LIMIT 1000
     """,
-    "Computers with unsupported operating systems": """
-MATCH (n:Computer)
-WHERE n.operatingsystem =~ "(?i).*Windows.* (2000|2003|2008|2012|xp|vista|7|8|me|nt).*"
-RETURN n 
-    """,
-    "Locations of high value/Tier Zero objects": """
-MATCH p = (:Domain)-[:Contains*1..]->(n:Base)
-WHERE "admin_tier_0" IN split(n.system_tags, ' ')
+    "Locations of Tier Zero / High Value objects": """
+MATCH p = (t:Base)<-[:Contains*1..]-(:Domain)
+WHERE COALESCE(t.system_tags, '') CONTAINS 'admin_tier_0'
 RETURN p
+LIMIT 1000
+    """,
+    "Map OU structure": """
+MATCH p = (:Domain)-[:Contains*1..]->(:OU)
+RETURN p
+LIMIT 1000
     """,
     "Principals with DCSync privileges": """
-MATCH p=()-[:DCSync|AllExtendedRights|GenericAll]->(:Domain)
+MATCH p=(:Base)-[:DCSync|AllExtendedRights|GenericAll]->(:Domain)
 RETURN p
+LIMIT 1000
     """,
-    "Users with foreign domain group membership": """
-MATCH p=(n:User)-[:MemberOf]->(m:Group)
-WHERE m.domainsid<>n.domainsid
+    "Principals with foreign domain group membership": """
+MATCH p=(s:Base)-[:MemberOf]->(t:Group)
+WHERE s.domainsid<>t.domainsid
 RETURN p
-    """,
-    "Groups with foreign domain group membership": """
-MATCH p=(n:Group)-[:MemberOf]->(m:Group)
-WHERE m.domainsid<>n.domainsid AND n.name<>m.name
-RETURN p    
+LIMIT 1000
     """,
     "Computers where Domain Users are local administrators": """
-MATCH p=(m:Group)-[:AdminTo]->(n:Computer)
-WHERE m.objectid ENDS WITH "-513"
-RETURN p    
+MATCH p=(s:Group)-[:AdminTo]->(:Computer)
+WHERE s.objectid ENDS WITH '-513'
+RETURN p
+LIMIT 1000
     """,
     "Computers where Domain Users can read LAPS passwords": """
-MATCH p=(m:Group)-[:AllExtendedRights|ReadLAPSPassword]->(n:Computer)
-WHERE m.objectid ENDS WITH "-513"
-RETURN p    
+MATCH p=(s:Group)-[:AllExtendedRights|ReadLAPSPassword]->(:Computer)
+WHERE s.objectid ENDS WITH '-513'
+RETURN p
+LIMIT 1000   
     """,
-    "Paths from Domain Users to high value/Tier Zero targets": """
-MATCH p=shortestPath((m:Group)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|Contains|GPLink|AllowedToDelegate|TrustedBy|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC5|ADCSESC6a|ADCSESC6b|ADCSESC7|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|DCFor*1..]->(n))
-WHERE "admin_tier_0" IN split(n.system_tags, ' ') AND m.objectid ENDS WITH "-513" AND m<>n
-RETURN p    
+    "Paths from Domain Users to Tier Zero / High Value targets": """
+MATCH p=shortestPath((s:Group)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t))
+WHERE COALESCE(t.system_tags, '') CONTAINS 'admin_tier_0' AND s.objectid ENDS WITH '-513' AND s<>t
+RETURN p
+LIMIT 1000  
     """,
     "Workstations where Domain Users can RDP": """
-MATCH p=(m:Group)-[:CanRDP]->(c:Computer)
-WHERE m.objectid ENDS WITH "-513" AND NOT toUpper(c.operatingsystem) CONTAINS "SERVER"
-RETURN p    
+MATCH p=(s:Group)-[:CanRDP]->(t:Computer)
+WHERE s.objectid ENDS WITH '-513' AND NOT toUpper(t.operatingsystem) CONTAINS 'SERVER'
+RETURN p
+LIMIT 1000 
     """,
     "Servers where Domain Users can RDP": """
-MATCH p=(m:Group)-[:CanRDP]->(c:Computer)
-WHERE m.objectid ENDS WITH "-513" AND toUpper(c.operatingsystem) CONTAINS "SERVER"
-RETURN p    
+MATCH p=(s:Group)-[:CanRDP]->(t:Computer)
+WHERE s.objectid ENDS WITH '-513' AND toUpper(t.operatingsystem) CONTAINS 'SERVER'
+RETURN p
+LIMIT 1000   
     """,
     "Dangerous privileges for Domain Users groups": """
-MATCH p=(m:Group)-[:Owns|WriteDacl|GenericAll|WriteOwner|ExecuteDCOM|GenericWrite|AllowedToDelegate|ForceChangePassword]->(n:Computer)
-WHERE m.objectid ENDS WITH "-513"
-RETURN p    
+MATCH p=(s:Group)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy]->(:Base)
+WHERE s.objectid ENDS WITH '-513'
+RETURN p
+LIMIT 1000 
     """,
     "Domain Admins logons to non-Domain Controllers": """
-MATCH (dc)-[r:MemberOf*0..]->(g:Group)
+MATCH (s)-[:MemberOf*0..]->(g:Group)
 WHERE g.objectid ENDS WITH '-516'
-WITH COLLECT(dc) AS exclude
-MATCH p = (c:Computer)-[n:HasSession]->(u:User)-[r2:MemberOf*1..]->(g:Group)
+WITH COLLECT(s) AS exclude
+MATCH p = (c:Computer)-[:HasSession]->(:User)-[:MemberOf*1..]->(g:Group)
 WHERE g.objectid ENDS WITH '-512' AND NOT c IN exclude
-RETURN p   
+RETURN p
+LIMIT 1000  
     """,
-    "Kerberoastable members of high value/Tier Zero groups": """
-MATCH p=shortestPath((n:User)-[:MemberOf]->(g:Group))
-WHERE "admin_tier_0" IN split(g.system_tags, ' ') AND n.hasspn=true
-RETURN p    
+    "Kerberoastable members of Tier Zero / High Value groups": """
+MATCH (u:User)
+WHERE u.hasspn=true
+AND u.enabled = true
+AND NOT u.objectid ENDS WITH '-502'
+AND NOT COALESCE(u.gmsa, false) = true
+AND NOT COALESCE(u.msa, false) = true
+AND COALESCE(u.system_tags, '') CONTAINS 'admin_tier_0'
+RETURN u
+LIMIT 100   
     """,
     "All Kerberoastable users": """
-MATCH (n:User)
-WHERE n.hasspn=true
-RETURN n    
+MATCH (u:User)
+WHERE u.hasspn=true
+AND u.enabled = true
+AND NOT u.objectid ENDS WITH '-502'
+AND NOT COALESCE(u.gmsa, false) = true
+AND NOT COALESCE(u.msa, false) = true
+RETURN u
+LIMIT 100  
     """,
     "Kerberoastable users with most privileges": """
-MATCH (u:User {hasspn:true})
-OPTIONAL MATCH (u)-[:AdminTo]->(c1:Computer)
-OPTIONAL MATCH (u)-[:MemberOf*1..]->(:Group)-[:AdminTo]->(c2:Computer)
-WITH u,COLLECT(c1) + COLLECT(c2) AS tempVar
-UNWIND tempVar AS comps
-RETURN u    
+MATCH (u:User)
+WHERE u.hasspn = true
+  AND u.enabled = true
+  AND NOT u.objectid ENDS WITH '-502'
+  AND NOT COALESCE(u.gmsa, false) = true
+  AND NOT COALESCE(u.msa, false) = true
+MATCH (u)-[:MemberOf|AdminTo*1..]->(c:Computer)
+WITH DISTINCT u, COUNT(c) AS adminCount
+RETURN u
+ORDER BY adminCount DESC
+LIMIT 100 
     """,
     "AS-REP Roastable users (DontReqPreAuth)": """
 MATCH (u:User)
 WHERE u.dontreqpreauth = true
-RETURN u    
+AND u.enabled = true
+RETURN u
+LIMIT 100  
     """,
     "Shortest paths to systems trusted for unconstrained delegation": """
-MATCH p=shortestPath((n)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|Contains|GPLink|AllowedToDelegate|TrustedBy|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC5|ADCSESC6a|ADCSESC6b|ADCSESC7|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|DCFor*1..]->(m:Computer))
-WHERE m.unconstraineddelegation = true AND n<>m
-RETURN p    
-    """,
-    "Shortest paths from Kerberoastable users": """
-MATCH p=shortestPath((n:User)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|Contains|GPLink|AllowedToDelegate|TrustedBy|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC5|ADCSESC6a|ADCSESC6b|ADCSESC7|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|DCFor*1..]->(m:Computer))
-WHERE n.hasspn = true AND n<>m
-RETURN p    
+MATCH p=shortestPath((s)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Computer))
+WHERE t.unconstraineddelegation = true AND s<>t
+RETURN p
+LIMIT 1000 
     """,
     "Shortest paths to Domain Admins from Kerberoastable users": """
-MATCH p=shortestPath((n:User)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|Contains|GPLink|AllowedToDelegate|TrustedBy|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC5|ADCSESC6a|ADCSESC6b|ADCSESC7|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|DCFor*1..]->(m:Group))
-WHERE n.hasspn = true AND m.objectid ENDS WITH "-512"
-RETURN p    
+MATCH p=shortestPath((s:User)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Group))
+WHERE s.hasspn=true
+AND s.enabled = true
+AND NOT s.objectid ENDS WITH '-502'
+AND NOT COALESCE(s.gmsa, false) = true
+AND NOT COALESCE(s.msa, false) = true
+AND t.objectid ENDS WITH '-512'
+RETURN p
+LIMIT 1000   
     """,
-    "Shortest paths to high value/Tier Zero targets": """
-MATCH p=shortestPath((n)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|Contains|GPLink|AllowedToDelegate|TrustedBy|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC5|ADCSESC6a|ADCSESC6b|ADCSESC7|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|DCFor*1..]->(m))
-WHERE "admin_tier_0" IN split(m.system_tags, ' ') AND n<>m
-RETURN p    
+    "Shortest paths to Tier Zero / High Value targets": """
+MATCH p=shortestPath((s)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t))
+WHERE COALESCE(t.system_tags, '') CONTAINS 'admin_tier_0' AND s<>t
+RETURN p
+LIMIT 1000 
     """,
-    "Shortest paths from Domain Users to high value/Tier Zero targets": """
-MATCH p=shortestPath((n:Group)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|Contains|GPLink|AllowedToDelegate|TrustedBy|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC5|ADCSESC6a|ADCSESC6b|ADCSESC7|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|DCFor*1..]->(m))
-WHERE "admin_tier_0" IN split(m.system_tags, ' ') AND n.objectid ENDS WITH "-513" AND n<>m
-RETURN p    
+    "Shortest paths from Domain Users to Tier Zero / High Value targets": """
+MATCH p=shortestPath((s:Group)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t))
+WHERE COALESCE(t.system_tags, '') CONTAINS 'admin_tier_0' AND s.objectid ENDS WITH '-513' AND s<>t
+RETURN p
+LIMIT 1000   
     """,
     "Shortest paths to Domain Admins": """
-MATCH p=shortestPath((n)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|Contains|GPLink|AllowedToDelegate|TrustedBy|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC5|ADCSESC6a|ADCSESC6b|ADCSESC7|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|DCFor*1..]->(g:Group))
-WHERE g.objectid ENDS WITH "-512" AND n<>g
-RETURN p    
+MATCH p=shortestPath((t:Group)<-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]-(s:Base))
+WHERE t.objectid ENDS WITH '-512' AND s<>t
+RETURN p
+LIMIT 1000   
+    """,
+    "Shortest paths from Owned objects": """
+MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Base))
+WHERE COALESCE(s.system_tags, '') CONTAINS 'owned' AND s<>t
+RETURN p
+LIMIT 1000
     """,
     "PKI hierarchy": """
-MATCH p=()-[:HostsCAService|IssuedSignedBy|EnterpriseCAFor|RootCAFor|TrustedForNTAuth|NTAuthStoreFor*..]->()
-RETURN p    
+MATCH p=()-[:HostsCAService|IssuedSignedBy|EnterpriseCAFor|RootCAFor|TrustedForNTAuth|NTAuthStoreFor*..]->(:Domain)
+RETURN p
+LIMIT 1000
     """,
     "Public Key Services container": """
-MATCH p = (c:Container)-[:Contains*..]->()
-WHERE c.distinguishedname starts with "CN=PUBLIC KEY SERVICES,CN=SERVICES,CN=CONFIGURATION,DC="
-RETURN p    
+MATCH p = (c:Container)-[:Contains*..]->(:Base)
+WHERE c.distinguishedname starts with 'CN=PUBLIC KEY SERVICES,CN=SERVICES,CN=CONFIGURATION,DC='
+RETURN p
+LIMIT 1000 
     """,
     "Enrollment rights on published certificate templates": """
-MATCH p = ()-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA)
-RETURN p    
+MATCH p = (:Base)-[:Enroll|GenericAll|AllExtendedRights]->(:CertTemplate)-[:PublishedTo]->(:EnterpriseCA)
+RETURN p
+LIMIT 1000
     """,
     "Enrollment rights on published ESC1 certificate templates": """
-MATCH p = ()-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA)
+MATCH p = (:Base)-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA)
 WHERE ct.enrolleesuppliessubject = True
 AND ct.authenticationenabled = True
 AND ct.requiresmanagerapproval = False
-RETURN p    
+AND (ct.authorizedsignatures = 0 OR ct.schemaversion = 1)
+RETURN p
+LIMIT 1000 
+    """,
+    "Enrollment rights on published ESC2 certificate templates": """
+MATCH p = (:Base)-[:Enroll|GenericAll|AllExtendedRights]->(c:CertTemplate)-[:PublishedTo]->(:EnterpriseCA)
+WHERE c.requiresmanagerapproval = false
+AND (c.effectiveekus = [''] OR '2.5.29.37.0' IN c.effectiveekus)
+AND (c.authorizedsignatures = 0 OR c.schemaversion = 1)
+RETURN p
+LIMIT 1000
     """,
     "Enrollment rights on published enrollment agent certificate templates": """
-MATCH p = ()-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA)
-WHERE ct.effectiveekus CONTAINS "1.3.6.1.4.1.311.20.2.1"
-OR ct.effectiveekus CONTAINS "2.5.29.37.0"
+MATCH p = (:Base)-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA)
+WHERE '1.3.6.1.4.1.311.20.2.1' IN ct.effectiveekus
+OR '2.5.29.37.0' IN ct.effectiveekus
 OR SIZE(ct.effectiveekus) = 0
-RETURN p    
+RETURN p
+LIMIT 1000   
     """,
     "Enrollment rights on published certificate templates with no security extension": """
-MATCH p = ()-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA)
+MATCH p = (:Base)-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA)
 WHERE ct.nosecurityextension = true
-RETURN p    
+RETURN p
+LIMIT 1000   
     """,
     "Enrollment rights on certificate templates published to Enterprise CA with User Specified SAN enabled": """
-MATCH p = ()-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(eca:EnterpriseCA)
+MATCH p = (:Base)-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(eca:EnterpriseCA)
 WHERE eca.isuserspecifiessanenabled = True
-RETURN p    
+RETURN p
+LIMIT 1000 
     """,
     "CA administrators and CA managers": """
-MATCH p = ()-[:ManageCertificates|ManageCA]->(:EnterpriseCA)
-RETURN p    
+MATCH p = (:Base)-[:ManageCertificates|ManageCA]->(:EnterpriseCA)
+RETURN p
+LIMIT 1000  
     """,
     "Domain controllers with weak certificate binding enabled": """
-MATCH p = (dc:Computer)-[:DCFor]->(d)
-WHERE dc.strongcertificatebindingenforcementraw = 0 OR dc.strongcertificatebindingenforcementraw = 1
-RETURN p    
+MATCH p = (s:Computer)-[:DCFor]->(:Domain)
+WHERE s.strongcertificatebindingenforcementraw = 0 OR s.strongcertificatebindingenforcementraw = 1
+RETURN p
+LIMIT 1000 
     """,
     "Domain controllers with UPN certificate mapping enabled": """
-MATCH p = (dc:Computer)-[:DCFor]->(d)
-WHERE dc.certificatemappingmethodsraw IN [4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31]
-RETURN p    
-    """
+MATCH p = (s:Computer)-[:DCFor]->(:Domain)
+WHERE s.certificatemappingmethodsraw IN [4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31]
+RETURN p
+LIMIT 1000 
+    """,
+    "Non-default permissions on IssuancePolicy nodes": """
+MATCH p = (s:Base)-[:GenericAll|GenericWrite|Owns|WriteOwner|WriteDacl]->(:IssuancePolicy)
+WHERE NOT s.objectid ENDS WITH '-512' AND NOT s.objectid ENDS WITH '-519'
+RETURN p
+LIMIT 1000
+    """,
+    "Enrollment rights on CertTemplates with OIDGroupLink": """
+MATCH p = (:Base)-[:Enroll|GenericAll|AllExtendedRights]->(:CertTemplate)-[:ExtendedByPolicy]->(:IssuancePolicy)-[:OIDGroupLink]->(:Group)
+RETURN p
+LIMIT 1000
+""",
+    "Enabled Tier Zero / High Value principals inactive for 60 days": """
+WITH 60 as inactive_days
+MATCH (n:Base)
+WHERE COALESCE(n.system_tags, '') CONTAINS 'admin_tier_0'
+AND n.enabled = true
+AND n.lastlogontimestamp < (datetime().epochseconds - (inactive_days * 86400)) // Replicated value
+AND n.lastlogon < (datetime().epochseconds - (inactive_days * 86400)) // Non-replicated value
+AND n.whencreated < (datetime().epochseconds - (inactive_days * 86400)) // Exclude recently created principals
+AND NOT n.name STARTS WITH 'AZUREADKERBEROS.' // Removes false positive, Azure KRBTGT
+AND NOT n.objectid ENDS WITH '-500' // Removes false positive, built-in Administrator
+AND NOT n.name STARTS WITH 'AZUREADSSOACC.' // Removes false positive, Entra Seamless SSO
+RETURN n
+""",
+    "Tier Zero / High Value enabled users not requiring smart card authentication": """
+MATCH (u:User)
+WHERE COALESCE(u.system_tags, '') CONTAINS 'admin_tier_0'
+AND u.enabled = true
+AND u.smartcardrequired = false
+AND NOT u.name STARTS WITH 'MSOL_' // Removes false positive, Entra sync
+AND NOT u.name STARTS WITH 'PROVAGENTGMSA' // Removes false positive, Entra sync
+AND NOT u.name STARTS WITH 'ADSYNCMSA_' // Removes false positive, Entra sync
+RETURN u
+    """,
+    "Domains where any user can join a computer to the domain": """
+MATCH (d:Domain)
+WHERE d.machineaccountquota > 0
+RETURN d
+    """,
+    "Domains with smart card accounts where smart account passwords do not expire": """
+MATCH (s:Domain)-[:Contains*1..]->(t:Base)
+WHERE s.expirepasswordsonsmartcardonlyaccounts = false
+AND t.enabled = true
+AND t.smartcardrequired = true
+RETURN s
+""",
+    "Two-way forest trusts enabled for delegation": """
+MATCH p=(n:Domain)-[r:TrustedBy]->(m:Domain)
+WHERE (m)-[:TrustedBy]->(n)
+AND r.trusttype = 'Forest'
+AND r.tgtdelegationenabled = true
+RETURN p
+    """,
+    "Computers with unsupported operating systems": """
+MATCH (c:Computer)
+WHERE c.operatingsystem =~ '(?i).*Windows.* (2000|2003|2008|2012|xp|vista|7|8|me|nt).*'
+RETURN c
+LIMIT 100
+""",
+    "Users which do not require password to authenticate": """
+MATCH (u:User)
+WHERE u.passwordnotreqd = true
+RETURN u
+LIMIT 100
+""",
+    "Users with passwords not rotated in over 1 year": """
+WITH 365 as days_since_change
+MATCH (u:User)
+WHERE u.pwdlastset < (datetime().epochseconds - (days_since_change * 86400))
+AND NOT u.pwdlastset IN [-1.0, 0.0]
+RETURN u
+LIMIT 100
+""",
+    "Nested groups within Tier Zero / High Value": """
+MATCH p=(t:Group)<-[:MemberOf*..]-(s:Group)
+WHERE COALESCE(t.system_tags, '') CONTAINS 'admin_tier_0'
+AND NOT s.objectid ENDS WITH '-512' // Domain Admins
+AND NOT s.objectid ENDS WITH '-519' // Enterprise Admins
+RETURN p
+LIMIT 1000
+    """,
+    "Disabled Tier Zero / High Value principals": """
+MATCH (n:Base)
+WHERE COALESCE(n.system_tags, '') CONTAINS 'admin_tier_0'
+AND n.enabled = false
+AND NOT n.objectid ENDS WITH '-502' // Removes false positive, KRBTGT
+AND NOT n.objectid ENDS WITH '-500' // Removes false positive, built-in Administrator
+RETURN n
+LIMIT 100
+    """,
+    "Principals with passwords stored using reversible encryption": """
+MATCH (n:Base)
+WHERE n.encryptedtextpwdallowed = true
+RETURN n
+""",
+    "Principals with DES-only Kerberos authentication": """
+MATCH (n:Base)
+WHERE n.enabled = true
+AND n.usedeskeyonly = true
+RETURN n
+""",
+    "Principals with weak supported Kerberos encryption types": """
+MATCH (u:Base)
+WHERE 'DES-CBC-CRC' IN u.supportedencryptiontypes
+OR 'DES-CBC-MD5' IN u.supportedencryptiontypes
+OR 'RC4-HMAC-MD5' IN u.supportedencryptiontypes
+RETURN u
+""",
+    "Tier Zero / High Value users with non-expiring passwords": """
+MATCH (u:User)
+WHERE u.enabled = true
+AND u.pwdneverexpires = true
+and COALESCE(u.system_tags, '') CONTAINS 'admin_tier_0'
+RETURN u
+LIMIT 100
+""",
+    "All coerce and NTLM relay edges": """
+MATCH p = (n:Base)-[:CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToSMB]->(:Base)
+RETURN p LIMIT 500
+    """,
+    "ESC8-vulnerable Enterprise CAs": """
+MATCH (n:EnterpriseCA)
+WHERE n.hasvulnerableendpoint=true
+RETURN n
+""",
+    "Computers with the outgoing NTLM setting set to Deny all": """
+MATCH (c:Computer)
+WHERE c.restrictoutboundntlm = True
+RETURN c LIMIT 1000
+""",
+    "Computers with membership in Protected Users": """
+MATCH p = (:Base)-[:MemberOf*1..]->(g:Group)
+WHERE g.objectid ENDS WITH "-525"
+RETURN p LIMIT 1000
+""",
+    "DCs vulnerable to NTLM relay to LDAP attacks": """
+MATCH p = (dc:Computer)-[:DCFor]->(:Domain)
+WHERE (dc.ldapavailable = True AND dc.ldapsigning = False)
+OR (dc.ldapsavailable = True AND dc.ldapsepa = False)
+OR (dc.ldapavailable = True AND dc.ldapsavailable = True AND dc.ldapsigning = False and dc.ldapsepa = True)
+RETURN p
+""",
+    "Computers with the WebClient running": """
+MATCH (c:Computer)
+WHERE c.webclientrunning = True
+RETURN c LIMIT 1000
+""",
+    "Computers not requiring inbound SMB signing": """
+MATCH (n:Computer)
+WHERE n.smbsigning = False
+RETURN n
+"""
 }
 
 

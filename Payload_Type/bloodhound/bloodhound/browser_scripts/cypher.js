@@ -106,12 +106,14 @@ function(task, responses){
                             "name": "Shortest Path To Here",
                             "type": "task",
                             "ui_feature": "bloodhound:shortest_path",
+                            openDialog: true,
                             "parameters": {"end_node": val["objectId"]},
                         },
                         {
                             "name": "Shortest Path From Here",
                             "type": "task",
                             "ui_feature": "bloodhound:shortest_path",
+                            openDialog: true,
                             "parameters": {"start_node": val["objectId"]},
                         }
                     ];

@@ -1,6 +1,9 @@
+import mythic_container.PayloadBuilder
 from mythic_container.PayloadBuilder import *
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
+
+Version = "0.0.3"
 
 
 class Bloodhound(PayloadType):
@@ -12,13 +15,14 @@ class Bloodhound(PayloadType):
     ]
     wrapper = False
     wrapped_payloads = []
-    note = """
-    This payload communicates with an existing Bloodhound Community Edition instance
+    note = f"""
+    This payload, v{Version} communicates with an existing Bloodhound Community Edition instance. 
+    Use BLOODHOUND_API_ID and BLOODHOUND_API_KEY in your user secrets for connectivity.
     """
     supports_dynamic_loading = False
     mythic_encrypts = True
     translation_container = None
-    agent_type = "service"
+    agent_type = AgentType.Service  # AgentType.Agent
     agent_path = pathlib.Path(".") / "bloodhound"
     agent_icon_path = agent_path / "agent_functions" / "bloodhound.svg"
     agent_code_path = agent_path / "agent_code"

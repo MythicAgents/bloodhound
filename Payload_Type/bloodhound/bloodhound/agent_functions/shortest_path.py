@@ -34,7 +34,7 @@ class ShortestPathArguments(TaskArguments):
                 cli_name="relationships",
                 description="Only allow certain kinds of edges",
                 type=ParameterType.ChooseMultiple,
-                choices=[],
+                choices=["Contains", "GetChangesAll", "MemberOf"],
                 default_value=["Contains", "GetChangesAll", "MemberOf"],
                 parameter_group_info=[ParameterGroupInfo(
                     required=False,
@@ -58,6 +58,7 @@ class ShortestPath(CommandBase):
     version = 1
     author = "@its_a_feature_"
     argument_class = ShortestPathArguments
+    supported_ui_features = ["bloodhound:shortest_path"]
     browser_script = BrowserScript(script_name="cypher", author="@its_a_feature_", for_new_ui=True)
     attackmapping = []
 
